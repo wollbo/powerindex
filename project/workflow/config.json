@@ -1,0 +1,9 @@
+{
+  "schedule": "*/30 * * * * *",
+  "tokenUrl": "https://sts.nordpoolgroup.com/connect/token",
+  "apiUrl": "https://REPLACE_ME/api/v2/Auction/Prices/ByAreas",
+  "market": "DayAhead",
+  "area": "NO1",
+  "currency": "EUR",
+  "date": "2026-01-28"
+}
