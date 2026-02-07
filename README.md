@@ -7,7 +7,6 @@ CRE Workflow (TypeScript)
 → (ABI-encoded report payload)
 → DailyIndexConsumer.onReport()
 → events + storage
-→ Frontend explorer
 
 ## Repo layout
 
