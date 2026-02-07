@@ -10,12 +10,6 @@ CRE Workflow (TypeScript)
 → events + storage
 → Frontend explorer
 
-## Status
-
-- ✅ Local end-to-end on Anvil (deploy consumer → relay payload → read back)
-- ✅ CRE workflow simulation (stub mode; API integration ready)
-- ⏳ Awaiting CRE deployment access + NordPool API subscription activation
-
 ## Repo layout
 
 - `src/`, `script/`, `test/` — Solidity consumer + Foundry scripts/tests
