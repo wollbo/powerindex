@@ -1,7 +1,6 @@
 # PowerIndex (Chainlink Convergence Hackathon)
 
-PowerIndex publishes a daily electricity price index (Nord Pool Day-ahead average) using a Chainlink Runtime Environment (CRE) workflow. The workflow computes an index off-chain, reaches consensus, and posts an ABI-encoded report on-chain to a consumer contract. A Vite + wagmi frontend reads commitments and visualizes the index.
-
+PowerIndex publishes a daily electricity price index (Nord Pool Day-ahead average) using a Chainlink Runtime Environment (CRE) workflow. The workflow computes an index off-chain, reaches consensus, and posts an ABI-encoded report on-chain to a consumer contract.
 ## Architecture
 
 CRE Workflow (TypeScript)
