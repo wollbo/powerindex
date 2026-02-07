@@ -59,4 +59,4 @@ The consumer currently expects this report encoding:
 ## Notes
 
 - Local testing uses Anvil. Import Anvil account #0 into MetaMask if you want to use the admin-gated UI.
-- Nord Pool API access is required to run the real data fetch path (workflow currently supports stub/demo mode).
+- Nord Pool Market data API access is required to run the real data fetch path (workflow currently supports stub/demo mode).
