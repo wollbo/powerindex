@@ -17,7 +17,6 @@ CRE Workflow (TypeScript)
 ## Prerequisites
 
 - Foundry: `forge`, `cast`, `anvil`
-- Node.js + npm (for frontend)
 - CRE CLI (for workflow simulation / deployment)
 
 ## Quickstart (Local / Anvil)
