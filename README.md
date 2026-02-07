@@ -1,2 +1,0 @@
-# powerindex
-Chainlink Convergence Hackathon
