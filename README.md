@@ -12,7 +12,6 @@ CRE Workflow (TypeScript)
 
 - `src/`, `script/`, `test/` — Solidity consumer + Foundry scripts/tests
 - `project/` — CRE project (workflow code + configs)
-- `powerapp/` — Frontend explorer (Vite + wagmi + RainbowKit) *(if included in this repo)*
 
 ## Prerequisites
 
