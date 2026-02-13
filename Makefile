@@ -14,6 +14,10 @@ CRE_DIR ?= project
 CONSUMER_FILE := deployments/consumer.txt
 CONSUMER := $(shell test -f $(CONSUMER_FILE) && cat $(CONSUMER_FILE))
 
+# Same for forwarder
+FORWARDER_FILE := deployments/forwarder.txt
+FORWARDER := $(shell test -f $(FORWARDER_FILE) && cat $(FORWARDER_FILE))
+
 # Latest CRE simulation output (or your own file)
 PAYLOAD_PATH ?= $(CRE_DIR)/out/latest.json
 
@@ -71,10 +75,19 @@ build:
 test:
 	forge test -v
 
-# Deploy consumer and persist address (script should write deployments/consumer.txt)
-deploy:
+ensure-pk:
+	@if [ -z "$(PK)" ]; then \
+		echo "Missing PK. Put PK=... in .env (recommended) or pass PK=... on the command line."; \
+		exit 1; \
+	fi
+
+# Deploy consumer and forwarder and persist address (script should write deployments/.txt)
+deploy: ensure-pk
 	forge script script/DeployConsumer.s.sol:DeployConsumer \
-	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
+	  --rpc-url $(RPC_URL) \
+	  --private-key $(PK) \
+	  --broadcast \
+
 
 ensure-consumer:
 	@if [ -z "$(CONSUMER)" ]; then \
@@ -82,22 +95,40 @@ ensure-consumer:
 		exit 1; \
 	fi
 
-report: ensure-consumer
-	INDEX_NAME=$(INDEX_NAME) AREA=$(AREA) DATE_NUM=$(DATE_NUM) VALUE_1E6=$(VALUE_1E6) CONSUMER=$(CONSUMER) \
+
+ensure-forwarder:
+	@if [ -z "$(FORWARDER)" ]; then \
+		echo "Forwarder not deployed yet. Run: make deploy"; \
+		exit 1; \
+	fi
+
+
+allow-sender: ensure-forwarder ensure-pk
+	ADDR=$$(cast wallet address --private-key $(PK)); \
+	echo "Allowing sender $$ADDR on forwarder $(FORWARDER)"; \
+	cast send $(FORWARDER) "setAllowedSender(address,bool)" $$ADDR true \
+	  --rpc-url $(RPC_URL) --private-key $(PK) 
+
+
+report: ensure-consumer ensure-forwarder ensure-pk
+	INDEX_NAME=$(INDEX_NAME) AREA=$(AREA) DATE_NUM=$(DATE_NUM) VALUE_1E6=$(VALUE_1E6) \
+	CONSUMER=$(CONSUMER) FORWARDER=$(FORWARDER) \
+	FOUNDRY_DISABLE_INTERACTIVE=1 \
 	forge script script/SendReportDemo.s.sol:SendReportDemo \
 	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
 
-relay: ensure-consumer
+
+relay: ensure-consumer ensure-forwarder ensure-pk
 	@if [ ! -f "$(PAYLOAD_PATH)" ]; then \
 		echo "Payload not found: $(PAYLOAD_PATH)"; \
 		echo "Run CRE simulation to generate it (or set PAYLOAD_PATH=...)"; \
 		exit 1; \
 	fi
-	PAYLOAD_PATH=$(PAYLOAD_PATH) CONSUMER=$(CONSUMER) \
+	PAYLOAD_PATH=$(PAYLOAD_PATH) CONSUMER=$(CONSUMER) FORWARDER=$(FORWARDER) \
 	forge script script/RelayFromJson.s.sol:RelayFromJson \
 	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
 
-read: ensure-consumer
+read: ensure-consumer ensure-forwarder
 	INDEX_ID=$$(cast keccak "$(INDEX_NAME)"); \
 	AREA_ID=$$(cast keccak "$(AREA)"); \
 	cast call $(CONSUMER) \
@@ -122,8 +153,13 @@ _seed_one:
 	done
 
 
-demo: deploy seed
-	@$(MAKE) read DATE_NUM=20260125 AREA=NO1
+demo: deploy allow-sender
+	@$(MAKE) report AREA=NO1 DATE_NUM=20260125 VALUE_1E6=42420000
+	@$(MAKE) read   AREA=NO1 DATE_NUM=20260125
+
 
 clean:
 	forge clean
+
+simulate:
+	@cd $(CRE_DIR) && ./run_workflow_and_capture.sh out

@@ -1,27 +1,48 @@
-# PowerIndex CRE project
+PowerIndex CRE Workflow
 
-This folder contains the Chainlink Runtime Environment (CRE) workflow for computing a daily power index and producing an ABI-encoded report suitable for on-chain submission.
+This folder contains the Chainlink Runtime Environment (CRE) workflow for computing a daily Nord Pool power index and producing a JSON payload suitable for on-chain submission.
 
 ## What it does
 
-- Cron-triggered workflow
-- Fetches Nord Pool day-ahead prices (OAuth2 token flow)
-- Computes daily average (supports 23/24/25 hour days; also compatible with 96×15m days)
-- Uses BFT median aggregation over nodes for the numeric result
-- Builds a canonical preimage + `dataHash`
-- Emits/writes a JSON payload for local relaying (in simulation mode)
+-Cron-triggered workflow
+-Fetches Nord Pool day-ahead prices (OAuth2 token flow)
+-Computes daily average (supports 92/96/100 periods for DST)
+-Supports negative prices (int256-safe)
+-Builds a canonical dataset hash over all intraday periods
+-Emits a JSON payload for local relaying
+The dataset hash commits to all (periodIndex, int256 value1e6) pairs for the day.
 
 ## Simulate locally
 
+From this folder:
+
+`./run_workflow_a`
+
+This will:
+
+- Run cre workflow simulate
+- Extract the POWERINDEX_JSON log line
+- Write out/latest.json
+
+## Relay On-Chain 
+
 From the repo root:
 
-- `cd project`
-- `cre workflow simulate workflow -T staging-settings --trigger-index 0 --non-interactive`
+- `make relay`
+- `make read`
 
-Expected output includes logs like `INDEX_READY ...` and writes a payload JSON (commonly `out/latest.json`).
+Ensure that `PAYLOAD_PATH=project/out/latest.json`
 
-If your tooling uses a different output path, update the Makefile variable:
-- `PAYLOAD_PATH=project/out/latest.json make relay`
+The relay script parses:
+
+- indexName
+- area
+- dateNum
+- value1e6
+- datasetHashHex
+
+and forwards the encoded report via LocalCREForwarder.
+
 
 ## Configuration
 
@@ -39,6 +60,8 @@ Common fields include:
 - `currency`
 - `date` (for testing; later computed dynamically)
 - `indexName`
+- `valueDecimals`
+- `demoMode`
 
 ## Secrets
 
@@ -60,4 +83,7 @@ A typical `out/latest.json` contains:
 - `dateNum` (number `yyyymmdd`)
 - `currency` (string)
 - `value1e6` (string or number)
-- `preimage` (string)
+- `datasetHashHex` (string)
+- `periodCount` (number)
+
+This workflow produces a deterministic dataset hash suitable for verifiable on-chain settlement via DailyIndexConsumer.

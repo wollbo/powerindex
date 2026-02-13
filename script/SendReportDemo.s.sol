@@ -2,47 +2,42 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/DailyIndexConsumer.sol";
+import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
 
 contract SendReportDemo is Script {
     function run() external {
         address consumerAddr = vm.envAddress("CONSUMER");
-        DailyIndexConsumer consumer = DailyIndexConsumer(consumerAddr);
+        address forwarderAddr = vm.envAddress("FORWARDER");
+        LocalCREForwarder forwarder = LocalCREForwarder(forwarderAddr);
 
-        // Inputs (with sensible defaults)
+        // Inputs
         string memory indexName = vm.envOr("INDEX_NAME", string("NORDPOOL_DAYAHEAD_AVG_V1"));
         string memory area = vm.envOr("AREA", string("NO1"));
         uint256 dateNumU = vm.envOr("DATE_NUM", uint256(20260125));
 
-        uint256 value1e6 = vm.envOr("VALUE_1E6", uint256(42_420_000));
+        // allow negatives in env by using string
+        string memory valueStr = vm.envOr("VALUE_1E6_STR", string("42420000"));
+        int256 value1e6 = vm.parseInt(valueStr);
 
         bytes32 indexId = keccak256(bytes(indexName));
         bytes32 areaId  = keccak256(bytes(area));
         uint32 dateNum  = uint32(dateNumU);
 
-        // Canonical preimage commits to the exact integer written on chain
-        string memory preimage = string.concat(
-            indexName, "|",
-            area, "|",
-            vm.toString(dateNumU), "|",
-            "EUR", "|",
-            vm.toString(value1e6)
-        );
+        // Demo datasetHash (for real, CRE will compute canonical bytes hash)
+        bytes32 datasetHash = keccak256(abi.encodePacked("demo-dataset|", indexName, "|", area, "|", vm.toString(dateNumU), "|", valueStr));
 
-        bytes32 dataHash = keccak256(abi.encodePacked(preimage));
-
-        bytes memory report = abi.encode(indexId, dateNum, areaId, value1e6, dataHash);
+        bytes memory report = abi.encode(indexId, dateNum, areaId, value1e6, datasetHash);
 
         vm.startBroadcast();
-        consumer.onReport(hex"", report);
+        forwarder.forward(consumerAddr, hex"", report);
         vm.stopBroadcast();
 
-        console2.log("Report sent to:", consumerAddr);
+        console2.log("Report sent via forwarder:", forwarderAddr);
+        console2.log("Consumer:", consumerAddr);
         console2.log("INDEX_NAME:", indexName);
         console2.log("AREA:", area);
         console2.log("DATE_NUM:", dateNumU);
         console2.log("VALUE_1E6:", value1e6);
-        console2.log("preimage:", preimage);
-        console2.logBytes32(dataHash);
+        console2.logBytes32(datasetHash);
     }
 }

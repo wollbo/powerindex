@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script assumes it lives inside the CRE project root folder (where project.yaml is).
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT_DIR="${1:-out}"
+OUT_PATH="$PROJECT_ROOT/$OUT_DIR/latest.json"
 
 mkdir -p "$PROJECT_ROOT/$OUT_DIR"
+
+echo "PROJECT_ROOT=$PROJECT_ROOT"
+echo "OUT_PATH=$OUT_PATH"
 
 LOGS=$(
   cre workflow simulate workflow \
@@ -15,10 +18,16 @@ LOGS=$(
     --non-interactive
 )
 
-echo "$LOGS"
+# Extract the JSON payload (last occurrence)
+JSON_LINE="$(echo "$LOGS" | sed -n 's/^.*POWERINDEX_JSON //p' | tail -n 1)"
 
-# Extract the JSON line from logs
-echo "$LOGS" | sed -n 's/^.*POWERINDEX_JSON //p' | tail -n 1 > "$PROJECT_ROOT/$OUT_DIR/latest.json"
+if [ -z "$JSON_LINE" ]; then
+  echo "ERROR: Did not find POWERINDEX_JSON in logs."
+  exit 1
+fi
 
-echo "Wrote $PROJECT_ROOT/$OUT_DIR/latest.json"
-cat "$PROJECT_ROOT/$OUT_DIR/latest.json"
+echo "$JSON_LINE" > "$OUT_PATH"
+
+echo "Wrote $OUT_PATH"
+ls -la "$OUT_PATH"
+cat "$OUT_PATH"

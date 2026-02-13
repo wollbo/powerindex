@@ -3,10 +3,13 @@ import {
   HTTPClient,
   handler,
   Runner,
-  consensusMedianAggregation,
+  NodeRuntime,
   type Runtime,
-  type HTTPSendRequester,
 } from "@chainlink/cre-sdk";
+
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+
 
 type Config = {
   schedule: string;
@@ -17,7 +20,7 @@ type Config = {
   currency: "EUR" | "NOK" | "SEK" | "DKK" | "GBP" | "PLN" | "RON";
   date: string;
 
-  // Local-only until CRE Vault access
+  // local demo until vault
   NORDPOOL_BASIC_AUTH: string;
   NORDPOOL_USERNAME: string;
   NORDPOOL_PASSWORD: string;
@@ -25,11 +28,9 @@ type Config = {
 
   demoMode?: boolean;
   demoDailyAvg?: number;
+
   indexName: string;
-  valueDecimals: number;
-
 };
-
 
 type TokenResponse = {
   access_token: string;
@@ -38,23 +39,13 @@ type TokenResponse = {
 };
 
 type NordPoolAreaPrices = {
-  deliveryDateCET: string;
-  updatedAt: string;
   status: "Missing" | "Preliminary" | "Final" | "Cancelled";
-  unit: string;
-  currency: string;
-  exchangeRate: number;
-  marketMainCurrency: string;
   averagePrice: number;
-  minPrice: number;
-  maxPrice: number;
   prices: Array<{
     deliveryStart: string;
     deliveryEnd: string;
     price: number | null;
   }>;
-  market: "DayAhead";
-  deliveryArea: string;
 };
 
 type NordPoolPricesByAreasResponse = NordPoolAreaPrices[];
@@ -65,150 +56,103 @@ function formUrlEncode(params: Record<string, string>) {
     .join("&");
 }
 
-// Minimal base64 encoder for Uint8Array (avoids Buffer)
-function toBase64(bytes: Uint8Array): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let out = "";
-  let i = 0;
-  for (; i + 2 < bytes.length; i += 3) {
-    const n = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
-    out += alphabet[(n >> 18) & 63] + alphabet[(n >> 12) & 63] + alphabet[(n >> 6) & 63] + alphabet[n & 63];
+function yyyymmdd(date: string): number {
+  return Number(date.replaceAll("-", ""));
+}
+
+// uint32 -> 4 bytes BE
+function u32be(n: number): Uint8Array {
+  const b = new Uint8Array(4);
+  b[0] = (n >>> 24) & 0xff;
+  b[1] = (n >>> 16) & 0xff;
+  b[2] = (n >>> 8) & 0xff;
+  b[3] = n & 0xff;
+  return b;
+}
+
+// int256 -> 32 bytes two's complement BE
+function i256be(x: bigint): Uint8Array {
+  const b = new Uint8Array(32);
+  let v = x;
+
+  if (v < 0n) {
+    // two's complement in 256 bits: x mod 2^256
+    v = (1n << 256n) + v;
   }
-  if (i < bytes.length) {
-    const a = bytes[i];
-    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const n = (a << 16) | (b << 8);
-    out += alphabet[(n >> 18) & 63] + alphabet[(n >> 12) & 63];
-    out += i + 1 < bytes.length ? alphabet[(n >> 6) & 63] : "=";
-    out += "=";
+  // now v is [0, 2^256)
+  for (let i = 31; i >= 0; i--) {
+    b[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return b;
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const len = parts.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(len);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
   }
   return out;
 }
 
-function computeDailyAverageFromPrices(prices: NordPoolAreaPrices["prices"]) {
-  const vals = prices.map((p) => p.price).filter((x): x is number => typeof x === "number");
-  const n = vals.length;
+function keccakHex(bytes: Uint8Array): `0x${string}` {
+  return (`0x${bytesToHex(keccak_256(bytes))}`) as `0x${string}`;
+}
+function computeDailyFromPrices(prices: NordPoolAreaPrices["prices"]) {
+  const vals = prices
+    .filter((p) => typeof p.price === "number")
+    .map((p) => ({ start: p.deliveryStart, price: p.price as number }))
+    .sort((a, b) => a.start.localeCompare(b.start));
 
-  // DST-safe: 23/24/25 periods
+  const n = vals.length;
+  // 15m: normally 96; DST can produce 92/100
   if (n !== 92 && n !== 96 && n !== 100) {
     throw new Error(`Unexpected period count ${n} (expected 92/96/100).`);
   }
 
-  let sum = 0;
-  for (const v of vals) sum += v;
-  return { average: sum / n, periodCount: n };
+  const points = vals.map((v, i) => {
+    const value1e6 = BigInt(Math.round(v.price * 1e6));
+    return { periodIndex: i, value1e6 };
+  });
+
+  let sum = 0n;
+  for (const p of points) sum += p.value1e6;
+  const avg1e6 = sum / BigInt(points.length);
+
+  // hash all datapoints: keccak( (u32 idx || i256 value1e6) * N )
+  const packedParts: Uint8Array[] = [];
+  for (const p of points) {
+    packedParts.push(u32be(p.periodIndex));
+    packedParts.push(i256be(p.value1e6));
+  }
+  const datasetHash = keccakHex(concatBytes(packedParts));
+
+  return { avg1e6, periodCount: n, datasetHash };
 }
 
-function yyyymmdd(date: string): number {
-  // "2026-01-25" -> 20260125
-  return Number(date.replaceAll("-", ""));
-}
-
-function scaleFixed(x: number, decimals: number): bigint {
-  const factor = 10 ** decimals;
-  return BigInt(Math.round(x * factor));
-}
 
 const onCronTrigger = (runtime: Runtime<Config>): string => {
   const http = new HTTPClient();
+  const nodeRuntime = runtime as unknown as NodeRuntime<Config>;
 
-  function getSecret(runtime: Runtime<Config>, name: keyof Config): string {
-    const v = runtime.config[name];
+  const getCfg = (k: keyof Config) => {
+    const v = runtime.config[k];
     if (typeof v === "string" && v.length > 0) return v;
-    throw new Error(`Missing secret/config: ${String(name)}`);
-  }
-
-  // Secrets (TS API)
- /*
-  const basicAuthB64 = runtime.getSecret({ id: "NORDPOOL_BASIC_AUTH" }).result().value;
-  const username = runtime.getSecret({ id: "NORDPOOL_USERNAME" }).result().value;
-  const password = runtime.getSecret({ id: "NORDPOOL_PASSWORD" }).result().value;
-  const scope = runtime.getSecret({ id: "NORDPOOL_SCOPE" }).result().value;
-*/
-  const basicAuthB64 = getSecret(runtime, "NORDPOOL_BASIC_AUTH");
-  const username = getSecret(runtime, "NORDPOOL_USERNAME");
-  const password = getSecret(runtime, "NORDPOOL_PASSWORD");
-  const scope = getSecret(runtime, "NORDPOOL_SCOPE");
-  // Core node-level logic: POST token -> GET prices -> compute average (returns number)
-  const fetchDailyAvg = (sendRequester: HTTPSendRequester): number => {
-      if (runtime.config.demoMode) {
-        const v = runtime.config.demoDailyAvg ?? 42.0;
-        runtime.log(`DEMO MODE: returning stub dailyAvg=${v}`);
-        return v;
-      }
-
-    const bodyStr = formUrlEncode({
-      grant_type: "password",
-      scope,
-      username,
-      password,
-    });
-
-    const tokenResp = sendRequester
-      .sendRequest({
-        url: runtime.config.tokenUrl,
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${basicAuthB64}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: toBase64(new TextEncoder().encode(bodyStr)),
-      })
-      .result();
-
-    if (tokenResp.statusCode !== 200) {
-      throw new Error(`Token request failed: ${tokenResp.statusCode}`);
-    }
-
-    const tokenJson = JSON.parse(new TextDecoder().decode(tokenResp.body)) as TokenResponse;
-    if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
-
-    const { apiUrl, market, area, currency, date } = runtime.config;
-    const url =
-      `${apiUrl}?market=${encodeURIComponent(market)}` +
-      `&areas=${encodeURIComponent(area)}` +
-      `&currency=${encodeURIComponent(currency)}` +
-      `&date=${encodeURIComponent(date)}`;
-
-    const pricesResp = sendRequester
-      .sendRequest({
-        url,
-        method: "GET",
-        headers: { Authorization: `Bearer ${tokenJson.access_token}` },
-      })
-      .result();
-
-    if (pricesResp.statusCode !== 200) {
-      throw new Error(`Prices request failed: ${pricesResp.statusCode}`);
-    }
-
-    const data = JSON.parse(new TextDecoder().decode(pricesResp.body)) as NordPoolPricesByAreasResponse;
-    if (!Array.isArray(data) || data.length === 0) throw new Error("Nord Pool response empty.");
-
-    const item = data[0];
-    if (item.status !== "Final") throw new Error(`Auction status not final: ${item.status}`);
-
-    const { average, periodCount } = computeDailyAverageFromPrices(item.prices);
-
-    const diff = Math.abs(item.averagePrice - average);
-    if (diff > 0.01) runtime.log(`Warning: computed avg differs from api averagePrice by ${diff}`);
-
-    runtime.log(`Computed avg=${average} from ${periodCount} periods`);
-    return average;
+    throw new Error(`Missing config: ${String(k)}`);
   };
+  const decodeBody = (b: Uint8Array) => new TextDecoder().decode(b);
 
-  // IMPORTANT: high-level sendRequest wraps runInNodeMode + consensus . :contentReference[oaicite:1]{index=1}
-  const dailyAvg = http
-    .sendRequest(runtime, fetchDailyAvg, consensusMedianAggregation<number>())()
-    .result();
 
+ // demo mode
+if (runtime.config.demoMode) {
   const dateNum = yyyymmdd(runtime.config.date);
-  const valueScaled = scaleFixed(dailyAvg, runtime.config.valueDecimals);
+  const value1e6 = BigInt(Math.round((runtime.config.demoDailyAvg ?? 42.42) * 1e6));
 
-  const value1e6 = BigInt(Math.round(dailyAvg * 1_000_000));
-
-  const preimage = `${runtime.config.indexName}|${runtime.config.area}|${dateNum}|${runtime.config.currency}|${value1e6.toString()}`;
-
+  // keccakHex returns 0x...
+  const datasetHash0x = keccakHex(new TextEncoder().encode("DEMO_DATASET"));
 
   const payload = {
     indexName: runtime.config.indexName,
@@ -217,18 +161,90 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
     dateNum,
     currency: runtime.config.currency,
     value1e6: value1e6.toString(),
-    preimage,
-};
+    datasetHashHex: datasetHash0x.slice(2),
+    periodCount: 96,
+  };
 
-  // Print a single-line JSON marker we can grep
   runtime.log(`POWERINDEX_JSON ${JSON.stringify(payload)}`);
+  return "ok";
+}
 
 
-  runtime.log(`INDEX_READY preimage=${preimage}`);
+  const basicAuthB64 = getCfg("NORDPOOL_BASIC_AUTH");
+  const username = getCfg("NORDPOOL_USERNAME");
+  const password = getCfg("NORDPOOL_PASSWORD");
+  const scope = getCfg("NORDPOOL_SCOPE");
 
-  runtime.log(
-    `SOLIDITY_CALL commitDailyIndex(indexName="${runtime.config.indexName}", dateNum=${dateNum}, area="${runtime.config.area}", valueScaled=${valueScaled.toString()}, currency="${runtime.config.currency}")`
-  );
+  // 1) Token
+  const bodyStr = formUrlEncode({
+    grant_type: "password",
+    scope,
+    username,
+    password,
+  });
+
+  const tokenResp = http
+    .sendRequest(nodeRuntime, {
+      url: runtime.config.tokenUrl,
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuthB64}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: bodyStr,
+    })
+    .result();
+
+  if (tokenResp.statusCode !== 200) {
+    throw new Error(`Token request failed: ${tokenResp.statusCode}`);
+  }
+
+  const tokenJson = JSON.parse(decodeBody(tokenResp.body)) as TokenResponse;
+; // body is string in this SDK
+  if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
+
+  // 2) Prices
+  const { apiUrl, market, area, currency, date } = runtime.config;
+  const url =
+    `${apiUrl}?market=${encodeURIComponent(market)}` +
+    `&areas=${encodeURIComponent(area)}` +
+    `&currency=${encodeURIComponent(currency)}` +
+    `&date=${encodeURIComponent(date)}`;
+
+  const pricesResp = http
+    .sendRequest(nodeRuntime, {
+      url,
+      method: "GET",
+      headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+    })
+    .result();
+
+  if (pricesResp.statusCode !== 200) {
+    throw new Error(`Prices request failed: ${pricesResp.statusCode}`);
+  }
+
+  const data = JSON.parse(decodeBody(pricesResp.body)) as NordPoolPricesByAreasResponse;
+  if (!Array.isArray(data) || data.length === 0) throw new Error("Nord Pool response empty.");
+
+  const item = data[0];
+  if (item.status !== "Final") throw new Error(`Auction status not final: ${item.status}`);
+
+  const { avg1e6, periodCount, datasetHash } = computeDailyFromPrices(item.prices);
+
+  const dateNum = yyyymmdd(runtime.config.date);
+
+  const payload = {
+    indexName: runtime.config.indexName,
+    area: runtime.config.area,
+    date: runtime.config.date,
+    dateNum,
+    currency: runtime.config.currency,
+    avg1e6: avg1e6.toString(),      
+    datasetHash,                    
+    periodCount,
+  };
+
+  runtime.log(`POWERINDEX_JSON ${JSON.stringify(payload)}`);
   return "ok";
 };
 
