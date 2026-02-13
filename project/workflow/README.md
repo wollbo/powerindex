@@ -10,7 +10,7 @@ This folder contains the Chainlink Runtime Environment (CRE) workflow for comput
 - Supports negative prices (int256-safe)
 - Builds a canonical dataset hash over all intraday periods
 - Emits a JSON payload for local relaying
-- 
+
 The dataset hash commits to all (periodIndex, int256 value1e6) pairs for the day.
 
 ## Simulate locally
