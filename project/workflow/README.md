@@ -4,19 +4,20 @@ This folder contains the Chainlink Runtime Environment (CRE) workflow for comput
 
 ## What it does
 
--Cron-triggered workflow
--Fetches Nord Pool day-ahead prices (OAuth2 token flow)
--Computes daily average (supports 92/96/100 periods for DST)
--Supports negative prices (int256-safe)
--Builds a canonical dataset hash over all intraday periods
--Emits a JSON payload for local relaying
+- Cron-triggered workflow
+- Fetches Nord Pool day-ahead prices (OAuth2 token flow)
+- Computes daily average (supports 92/96/100 periods for DST)
+- Supports negative prices (int256-safe)
+- Builds a canonical dataset hash over all intraday periods
+- Emits a JSON payload for local relaying
+- 
 The dataset hash commits to all (periodIndex, int256 value1e6) pairs for the day.
 
 ## Simulate locally
 
 From this folder:
 
-`./run_workflow_a`
+`./run_workflow_and_capture.sh`
 
 This will:
 
