@@ -1,4 +1,4 @@
-PowerIndex CRE Workflow
+# PowerIndex CRE Workflow
 
 This folder contains the Chainlink Runtime Environment (CRE) workflow for computing a daily Nord Pool power index and producing a JSON payload suitable for on-chain submission.
 
