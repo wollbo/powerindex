@@ -18,6 +18,15 @@ CONSUMER := $(shell test -f $(CONSUMER_FILE) && cat $(CONSUMER_FILE))
 FORWARDER_FILE := deployments/forwarder.txt
 FORWARDER := $(shell test -f $(FORWARDER_FILE) && cat $(FORWARDER_FILE))
 
+# And for registry
+REGISTRY_FILE := deployments/registry.txt
+REGISTRY := $(shell test -f $(REGISTRY_FILE) && cat $(REGISTRY_FILE))
+
+# And market
+FACTORY_FILE := deployments/factory.txt
+FACTORY := $(shell test -f $(FACTORY_FILE) && cat $(FACTORY_FILE))
+
+
 # Latest CRE simulation output (or your own file)
 PAYLOAD_PATH ?= $(CRE_DIR)/out/latest.json
 
@@ -27,12 +36,31 @@ AREA ?= NO1
 DATE_NUM ?= 20260125
 VALUE_1E6 ?= 42420000
 
+PREMIUM_ETH ?= 0.1
+PAYOUT_ETH ?= 1.0
+STRIKE_1E6 ?= 40000000
+DIR ?= 0
+BUY_DEADLINE ?= 1771758000
+
+# Default Currency
+CURRENCY ?= EUR
+
 # Default SEED parameters
 SEED_DAYS ?= 7
 SEED_AREAS ?= SE1 SE2 SE3 SE4 FI
 
 # ====== Targets ======
-.PHONY: help print anvil build test deploy report relay read seed demo clean ensure-consumer seed _seed_one
+.PHONY: help print anvil build test clean \
+        ensure-pk ensure-consumer ensure-forwarder ensure-registry \
+        deploy allow-sender request fulfill \
+        manual-commit relay-json report relay read seed _seed_one demo \
+        simulate simulate-request
+
+
+# Backwards-compatible aliases
+report: manual-commit
+relay: relay-json
+
 
 help:
 	@echo "Targets:"
@@ -65,6 +93,8 @@ print:
 	@echo "AREA=$(AREA)"
 	@echo "DATE_NUM=$(DATE_NUM)"
 	@echo "VALUE_1E6=$(VALUE_1E6)"
+	@echo "FACTORY=$(FACTORY)"
+
 
 anvil:
 	anvil
@@ -86,7 +116,7 @@ deploy: ensure-pk
 	forge script script/DeployConsumer.s.sol:DeployConsumer \
 	  --rpc-url $(RPC_URL) \
 	  --private-key $(PK) \
-	  --broadcast \
+	  --broadcast
 
 
 ensure-consumer:
@@ -110,15 +140,44 @@ allow-sender: ensure-forwarder ensure-pk
 	  --rpc-url $(RPC_URL) --private-key $(PK) 
 
 
-report: ensure-consumer ensure-forwarder ensure-pk
-	INDEX_NAME=$(INDEX_NAME) AREA=$(AREA) DATE_NUM=$(DATE_NUM) VALUE_1E6=$(VALUE_1E6) \
+ensure-registry:
+	@if [ -z "$(REGISTRY)" ]; then \
+		echo "Registry not deployed yet. Run: make deploy"; \
+		exit 1; \
+	fi
+
+
+ensure-factory:
+	@if [ -z "$(FACTORY)" ]; then \
+		echo "Factory not deployed yet. Run: make deploy"; \
+		exit 1; \
+	fi
+
+
+request:
+	@test -n "$(REQUEST_ID)" || (echo "Missing REQUEST_ID=..."; exit 1)
+	@cd project && ./run_request_and_capture.sh "$(REQUEST_ID)" "$(REGISTRY)" "$(RPC_URL)" out real
+
+
+fulfill: ensure-consumer ensure-forwarder ensure-registry
+	@if [ -z "$(REQUEST_ID)" ]; then \
+		echo "Missing REQUEST_ID. Example: make fulfill REQUEST_ID=0"; \
+		exit 1; \
+	fi
+	PAYLOAD_PATH=$(PAYLOAD_PATH) CONSUMER=$(CONSUMER) FORWARDER=$(FORWARDER) REGISTRY=$(REGISTRY) REQUEST_ID=$(REQUEST_ID) \
+	forge script script/FulfillRequestFromJson.s.sol:FulfillRequestFromJson \
+	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
+
+
+manual-commit: ensure-consumer ensure-forwarder ensure-pk
+	INDEX_NAME=$(INDEX_NAME) AREA=$(AREA) DATE_NUM=$(DATE_NUM) VALUE_1E6_STR=$(VALUE_1E6) \
 	CONSUMER=$(CONSUMER) FORWARDER=$(FORWARDER) \
 	FOUNDRY_DISABLE_INTERACTIVE=1 \
 	forge script script/SendReportDemo.s.sol:SendReportDemo \
 	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
 
 
-relay: ensure-consumer ensure-forwarder ensure-pk
+relay-json: ensure-consumer ensure-forwarder ensure-pk
 	@if [ ! -f "$(PAYLOAD_PATH)" ]; then \
 		echo "Payload not found: $(PAYLOAD_PATH)"; \
 		echo "Run CRE simulation to generate it (or set PAYLOAD_PATH=...)"; \
@@ -128,13 +187,14 @@ relay: ensure-consumer ensure-forwarder ensure-pk
 	forge script script/RelayFromJson.s.sol:RelayFromJson \
 	  --rpc-url $(RPC_URL) --private-key $(PK) --broadcast
 
-read: ensure-consumer ensure-forwarder
+read: ensure-consumer
 	INDEX_ID=$$(cast keccak "$(INDEX_NAME)"); \
 	AREA_ID=$$(cast keccak "$(AREA)"); \
 	cast call $(CONSUMER) \
-	  "commitments(bytes32,bytes32,uint32)(bytes32,uint256,address,uint64)" \
+	  "commitments(bytes32,bytes32,uint32)(bytes32,int256,address,uint64)" \
 	  $$INDEX_ID $$AREA_ID $(DATE_NUM) \
 	  --rpc-url $(RPC_URL)
+
 
 seed:
 	@if [ -z "$(CONSUMER)" ]; then echo "Consumer not deployed yet"; exit 1; fi
@@ -163,3 +223,30 @@ clean:
 
 simulate:
 	@cd $(CRE_DIR) && ./run_workflow_and_capture.sh out
+
+
+simulate-request: ensure-registry
+	@if [ -z "$(REQUEST_ID)" ]; then \
+		echo "Missing REQUEST_ID. Example: make simulate-request REQUEST_ID=0"; \
+		exit 1; \
+	fi
+	@cd $(CRE_DIR) && ./run_request_and_capture.sh "$(REQUEST_ID)" "$(REGISTRY)" "$(RPC_URL)" "out" demo
+
+
+frontend-env: ensure-consumer ensure-forwarder ensure-registry ensure-factory
+	@echo "VITE_ANVIL_CONSUMER_ADDRESS=$(CONSUMER)"
+	@echo "VITE_ANVIL_FORWARDER_ADDRESS=$(FORWARDER)"
+	@echo "VITE_ANVIL_REGISTRY_ADDRESS=$(REGISTRY)"
+	@echo "VITE_ANVIL_FACTORY_ADDRESS=$(FACTORY)"
+
+
+option-create: ensure-pk
+	INDEX_ID=$$(cast keccak "NORDPOOL_DAYAHEAD_AVG_V1"); \
+	AREA_ID=$$(cast keccak "$(AREA)"); \
+	PREMIUM_WEI=$$(cast --to-wei $(PREMIUM_ETH) ether); \
+	PAYOUT_WEI=$$(cast --to-wei $(PAYOUT_ETH) ether); \
+	cast send $(FACTORY) \
+	  "createOption(address,bytes32,bytes32,uint32,int256,uint8,uint256,uint64)(address)" \
+	  $(CONSUMER) $$INDEX_ID $$AREA_ID $(DATE_NUM) $(STRIKE_1E6) $(DIR) $$PREMIUM_WEI $(BUY_DEADLINE) \
+	  --value $$PAYOUT_WEI \
+	  --rpc-url $(RPC_URL) --private-key $(PK)
