@@ -250,3 +250,7 @@ option-create: ensure-pk
 	  $(CONSUMER) $$INDEX_ID $$AREA_ID $(DATE_NUM) $(STRIKE_1E6) $(DIR) $$PREMIUM_WEI $(BUY_DEADLINE) \
 	  --value $$PAYOUT_WEI \
 	  --rpc-url $(RPC_URL) --private-key $(PK)
+
+
+fmt:
+	forge fmt

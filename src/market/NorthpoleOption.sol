@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IIndexConsumer } from "../interfaces/IIndexConsumer.sol";
+import {IIndexConsumer} from "../interfaces/IIndexConsumer.sol";
 
 contract NorthpoleOption {
-    enum Direction { AboveOrEqual, Below }
+    enum Direction {
+        AboveOrEqual,
+        Below
+    }
 
     // immutable “instrument definition”
     IIndexConsumer public immutable consumer;
@@ -12,13 +15,13 @@ contract NorthpoleOption {
 
     bytes32 public immutable indexId;
     bytes32 public immutable areaId;
-    uint32  public immutable yyyymmdd;
-    int256  public immutable strike1e6;
+    uint32 public immutable yyyymmdd;
+    int256 public immutable strike1e6;
     Direction public immutable direction;
 
     uint256 public immutable premiumWei;
     uint256 public immutable payoutWei;
-    uint64  public immutable buyDeadline; // unix seconds (UTC)
+    uint64 public immutable buyDeadline; // unix seconds (UTC)
 
     // lifecycle
     address public buyer;
@@ -80,7 +83,7 @@ contract NorthpoleOption {
         cancelled = true;
         emit CancelledBySeller();
 
-        (bool ok,) = seller.call{ value: payoutWei }("");
+        (bool ok,) = seller.call{value: payoutWei}("");
         require(ok, "refund failed");
     }
 
@@ -98,7 +101,7 @@ contract NorthpoleOption {
         buyer = msg.sender;
         emit Purchased(msg.sender);
 
-        (bool ok,) = seller.call{ value: premiumWei }("");
+        (bool ok,) = seller.call{value: premiumWei}("");
         require(ok, "premium transfer failed");
     }
 
@@ -107,18 +110,16 @@ contract NorthpoleOption {
         if (settled) revert AlreadySettled();
         if (buyer == address(0)) revert NotAllowed();
 
-        (bytes32 datasetHash, int256 value1e6,, uint64 reportedAt) =
-            consumer.commitments(indexId, areaId, yyyymmdd);
+        (bytes32 datasetHash, int256 value1e6,, uint64 reportedAt) = consumer.commitments(indexId, areaId, yyyymmdd);
 
         if (reportedAt == 0 || datasetHash == bytes32(0)) revert IndexNotAvailable();
 
-        bool buyerWins =
-            (direction == Direction.AboveOrEqual) ? (value1e6 >= strike1e6) : (value1e6 < strike1e6);
+        bool buyerWins = (direction == Direction.AboveOrEqual) ? (value1e6 >= strike1e6) : (value1e6 < strike1e6);
 
         address winner = buyerWins ? buyer : seller;
         settled = true;
 
-        (bool ok,) = winner.call{ value: payoutWei }("");
+        (bool ok,) = winner.call{value: payoutWei}("");
         require(ok, "payout failed");
 
         emit Settled(winner, value1e6, datasetHash, payoutWei);

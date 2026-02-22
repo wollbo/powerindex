@@ -48,12 +48,7 @@ contract RequestRegistry {
         address consumer
     );
 
-    event RequestFulfilled(
-        uint256 indexed requestId,
-        int256 value1e6,
-        bytes32 datasetHash,
-        uint64 fulfilledAt
-    );
+    event RequestFulfilled(uint256 indexed requestId, int256 value1e6, bytes32 datasetHash, uint64 fulfilledAt);
 
     event RequestCancelled(uint256 indexed requestId);
 
@@ -74,12 +69,11 @@ contract RequestRegistry {
         _;
     }
 
-    function createRequest(
-        bytes32 indexId,
-        bytes32 areaId,
-        uint32 yyyymmdd,
-        string calldata currency
-    ) external onlyOwner returns (uint256 requestId) {
+    function createRequest(bytes32 indexId, bytes32 areaId, uint32 yyyymmdd, string calldata currency)
+        external
+        onlyOwner
+        returns (uint256 requestId)
+    {
         requestId = nextRequestId++;
 
         requests[requestId] = Request({
@@ -97,11 +91,7 @@ contract RequestRegistry {
         emit RequestCreated(requestId, indexId, areaId, yyyymmdd, currency, consumer);
     }
 
-    function markFulfilled(
-        uint256 requestId,
-        int256 value1e6,
-        bytes32 datasetHash
-    ) external onlyFulfiller {
+    function markFulfilled(uint256 requestId, int256 value1e6, bytes32 datasetHash) external onlyFulfiller {
         Request storage r = requests[requestId];
         if (r.status != Status.Pending) revert InvalidStatus();
 
@@ -120,5 +110,4 @@ contract RequestRegistry {
         r.status = Status.Cancelled;
         emit RequestCancelled(requestId);
     }
-
 }

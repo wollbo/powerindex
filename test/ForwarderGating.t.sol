@@ -2,20 +2,20 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import { DailyIndexConsumer } from "src/DailyIndexConsumer.sol";
-import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
+import {DailyIndexConsumer} from "src/DailyIndexConsumer.sol";
+import {LocalCREForwarder} from "src/forwarders/LocalCREForwarder.sol";
 
 contract ForwarderGatingTest is Test {
     LocalCREForwarder forwarder;
     DailyIndexConsumer consumer;
 
     address CRE_SENDER = address(0xBEEF);
-    address ATTACKER   = address(0xCAFE);
+    address ATTACKER = address(0xCAFE);
 
     bytes32 constant INDEX_ID = keccak256(bytes("NORDPOOL_DAYAHEAD_AVG_V1"));
-    bytes32 constant AREA_ID  = keccak256(bytes("NO1"));
-    uint32  constant DATE_NUM = 20260128;
-    int256  constant VALUE_1E6 = int256(42_420_000);
+    bytes32 constant AREA_ID = keccak256(bytes("NO1"));
+    uint32 constant DATE_NUM = 20260128;
+    int256 constant VALUE_1E6 = int256(42_420_000);
 
     function setUp() public {
         forwarder = new LocalCREForwarder();

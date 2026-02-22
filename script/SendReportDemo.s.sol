@@ -2,9 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
+import {LocalCREForwarder} from "src/forwarders/LocalCREForwarder.sol";
 import "forge-std/console2.sol";
-
 
 contract SendReportDemo is Script {
     function run() external {
@@ -22,11 +21,13 @@ contract SendReportDemo is Script {
         int256 value1e6 = vm.parseInt(valueStr);
 
         bytes32 indexId = keccak256(bytes(indexName));
-        bytes32 areaId  = keccak256(bytes(area));
-        uint32 dateNum  = uint32(dateNumU);
+        bytes32 areaId = keccak256(bytes(area));
+        uint32 dateNum = uint32(dateNumU);
 
         // Demo datasetHash (for real, CRE will compute canonical bytes hash)
-        bytes32 datasetHash = keccak256(abi.encodePacked("demo-dataset|", indexName, "|", area, "|", vm.toString(dateNumU), "|", valueStr));
+        bytes32 datasetHash = keccak256(
+            abi.encodePacked("demo-dataset|", indexName, "|", area, "|", vm.toString(dateNumU), "|", valueStr)
+        );
 
         bytes memory report = abi.encode(indexId, dateNum, areaId, value1e6, datasetHash);
 

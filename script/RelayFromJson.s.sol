@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
+import {LocalCREForwarder} from "src/forwarders/LocalCREForwarder.sol";
 
 contract RelayFromJson is Script {
     function run() external {
@@ -25,10 +25,9 @@ contract RelayFromJson is Script {
         string memory datasetHashHex = vm.parseJsonString(json, ".datasetHashHex");
         bytes32 datasetHash = bytes32(vm.parseUint(string.concat("0x", datasetHashHex)));
 
-
         bytes32 indexId = keccak256(bytes(indexName));
-        bytes32 areaId  = keccak256(bytes(area));
-        uint32 dateNum  = uint32(dateNumU);
+        bytes32 areaId = keccak256(bytes(area));
+        uint32 dateNum = uint32(dateNumU);
 
         bytes memory report = abi.encode(indexId, dateNum, areaId, value1e6, datasetHash);
 

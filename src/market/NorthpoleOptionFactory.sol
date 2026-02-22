@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { NorthpoleOption } from "./NorthpoleOption.sol";
-import { IIndexConsumer } from "../interfaces/IIndexConsumer.sol";
+import {NorthpoleOption} from "./NorthpoleOption.sol";
+import {IIndexConsumer} from "../interfaces/IIndexConsumer.sol";
 
 contract NorthpoleOptionFactory {
     event OptionCreated(
@@ -39,7 +39,7 @@ contract NorthpoleOptionFactory {
         if (reportedAt != 0) revert IndexAlreadyPublished();
 
         option = address(
-            new NorthpoleOption{ value: msg.value }(
+            new NorthpoleOption{value: msg.value}(
                 consumer,
                 msg.sender,
                 indexId,

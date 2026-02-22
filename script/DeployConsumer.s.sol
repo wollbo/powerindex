@@ -4,15 +4,20 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console2.sol";
 
-import { DailyIndexConsumer } from "src/DailyIndexConsumer.sol";
-import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
-import { RequestRegistry } from "src/registry/RequestRegistry.sol";
-import { NorthpoleOptionFactory } from "src/market/NorthpoleOptionFactory.sol";
+import {DailyIndexConsumer} from "src/DailyIndexConsumer.sol";
+import {LocalCREForwarder} from "src/forwarders/LocalCREForwarder.sol";
+import {RequestRegistry} from "src/registry/RequestRegistry.sol";
+import {NorthpoleOptionFactory} from "src/market/NorthpoleOptionFactory.sol";
 
 contract DeployConsumer is Script {
     function run()
         external
-        returns (DailyIndexConsumer consumer, LocalCREForwarder forwarder, RequestRegistry registry, NorthpoleOptionFactory factory)
+        returns (
+            DailyIndexConsumer consumer,
+            LocalCREForwarder forwarder,
+            RequestRegistry registry,
+            NorthpoleOptionFactory factory
+        )
     {
         vm.startBroadcast();
 
@@ -45,6 +50,6 @@ contract DeployConsumer is Script {
         vm.writeFile("deployments/forwarder.txt", vm.toString(address(forwarder)));
         vm.writeFile("deployments/consumer.txt", vm.toString(address(consumer)));
         vm.writeFile("deployments/registry.txt", vm.toString(address(registry)));
-        vm.writeFile("deployments/factory.txt",   vm.toString(address(factory)));
+        vm.writeFile("deployments/factory.txt", vm.toString(address(factory)));
     }
 }

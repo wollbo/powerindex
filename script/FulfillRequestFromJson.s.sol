@@ -4,17 +4,17 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console2.sol";
 
-import { LocalCREForwarder } from "src/forwarders/LocalCREForwarder.sol";
-import { RequestRegistry } from "src/registry/RequestRegistry.sol";
+import {LocalCREForwarder} from "src/forwarders/LocalCREForwarder.sol";
+import {RequestRegistry} from "src/registry/RequestRegistry.sol";
 
 contract FulfillRequestFromJson is Script {
     function run() external {
         // Required env
-        address consumerAddr   = vm.envAddress("CONSUMER");
-        address forwarderAddr  = vm.envAddress("FORWARDER");
-        address registryAddr   = vm.envAddress("REGISTRY");
-        uint256 requestId      = vm.envUint("REQUEST_ID");
-        string memory path     = vm.envString("PAYLOAD_PATH");
+        address consumerAddr = vm.envAddress("CONSUMER");
+        address forwarderAddr = vm.envAddress("FORWARDER");
+        address registryAddr = vm.envAddress("REGISTRY");
+        uint256 requestId = vm.envUint("REQUEST_ID");
+        string memory path = vm.envString("PAYLOAD_PATH");
 
         LocalCREForwarder forwarder = LocalCREForwarder(forwarderAddr);
         RequestRegistry registry = RequestRegistry(registryAddr);
@@ -25,12 +25,12 @@ contract FulfillRequestFromJson is Script {
         // Support your current payload keys
         // (your workflow logs show: value1e6 + datasetHashHex)
         string memory indexName = vm.parseJsonString(json, ".indexName");
-        string memory area      = vm.parseJsonString(json, ".area");
-        uint256 dateNumU        = vm.parseJsonUint(json, ".dateNum");
+        string memory area = vm.parseJsonString(json, ".area");
+        uint256 dateNumU = vm.parseJsonUint(json, ".dateNum");
 
         // value1e6 might be a string in JSON -> parseJsonString + parseInt
-        string memory valueStr  = vm.parseJsonString(json, ".value1e6");
-        int256 value1e6         = vm.parseInt(valueStr);
+        string memory valueStr = vm.parseJsonString(json, ".value1e6");
+        int256 value1e6 = vm.parseInt(valueStr);
 
         // datasetHashHex from workflow is currently hex without 0x in logs
         // but your file may contain either with or without 0x. Normalize here:
@@ -38,8 +38,8 @@ contract FulfillRequestFromJson is Script {
         bytes32 datasetHash = _parseBytes32Flexible(dh);
 
         bytes32 indexId = keccak256(bytes(indexName));
-        bytes32 areaId  = keccak256(bytes(area));
-        uint32 dateNum  = uint32(dateNumU);
+        bytes32 areaId = keccak256(bytes(area));
+        uint32 dateNum = uint32(dateNumU);
 
         // ABI-encoded report expected by DailyIndexConsumer:
         // (bytes32 indexId, uint32 yyyymmdd, bytes32 areaId, int256 value1e6, bytes32 datasetHash)
@@ -52,7 +52,6 @@ contract FulfillRequestFromJson is Script {
 
         // 2) Commit to consumer via forwarder
         forwarder.forward(consumerAddr, hex"", report);
-
 
         vm.stopBroadcast();
 

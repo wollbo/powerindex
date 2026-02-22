@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import { IReceiver } from "./interfaces/IReceiver.sol";
+import {IReceiver} from "./interfaces/IReceiver.sol";
 
 contract DailyIndexConsumer is IReceiver {
     event DailyIndexCommitted(
