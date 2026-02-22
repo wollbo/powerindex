@@ -141,7 +141,12 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
   const getCfg = (k: keyof Config) => {
     const v = runtime.config[k];
     if (typeof v === "string" && v.length > 0) return v;
-    throw new Error(`Missing config: ${String(k)}`);
+
+    // fallback to process.env for secrets (works in Node/Bun)
+    const env = (process?.env?.[String(k)] ?? "").toString();
+    if (env.length > 0) return env;
+
+    throw new Error(`Missing config/env: ${String(k)}`);
   };
   const decodeBody = (b: Uint8Array) => new TextDecoder().decode(b);
 
@@ -175,6 +180,11 @@ if (runtime.config.demoMode) {
   const password = getCfg("NORDPOOL_PASSWORD");
   const scope = getCfg("NORDPOOL_SCOPE");
 
+  function base64EncodeUtf8(s: string): string {
+  // Bun supports btoa; Node may not. This works in both Bun+Node runtimes.
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
   // 1) Token
   const bodyStr = formUrlEncode({
     grant_type: "password",
@@ -191,7 +201,7 @@ if (runtime.config.demoMode) {
         Authorization: `Basic ${basicAuthB64}`,
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: bodyStr,
+      body: base64EncodeUtf8(bodyStr), // <-- THIS is the fix
     })
     .result();
 
@@ -239,8 +249,8 @@ if (runtime.config.demoMode) {
     date: runtime.config.date,
     dateNum,
     currency: runtime.config.currency,
-    avg1e6: avg1e6.toString(),      
-    datasetHash,                    
+    value1e6: avg1e6.toString(),
+    datasetHashHex: datasetHash.startsWith("0x") ? datasetHash.slice(2) : datasetHash,
     periodCount,
   };
 

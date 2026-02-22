@@ -1,0 +1,20 @@
+{
+  "schedule": "*/15 * * * * *",
+  "tokenUrl": "https://sts.nordpoolgroup.com/connect/token",
+  "apiUrl": "https://data-api.nordpoolgroup.com/api/v2/Auction/Prices/ByAreas",
+  "market": "DayAhead",
+  "area": "NO1",
+  "currency": "EUR",
+  "date": "2026-01-25",
+
+  "NORDPOOL_BASIC_AUTH": "BASE64_CLIENTID_COLON_SECRET",
+  "NORDPOOL_USERNAME": "USERNAME",
+  "NORDPOOL_PASSWORD": "PASSWORD",
+  "NORDPOOL_SCOPE": "marketdata_api",
+
+  "demoMode": true,
+  "demoDailyAvg": 42.42,
+  "indexName": "NORDPOOL_DAYAHEAD_AVG_V1",
+  "valueDecimals": 2
+
+}
