@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@types/bun": "1.2.21",
-    "@types/estree": "^1.0.8"
+    "@types/estree": "^1.0.8",
+    "@types/node": "^25.3.0"
   }
 }

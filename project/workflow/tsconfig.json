@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["node"],
     "target": "esnext",
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -11,6 +12,7 @@
     "forceConsistentCasingInFileNames": true
   },
   "include": [
-    "main.ts"
+    "main.ts",
+    "publisher.ts"
   ]
 }

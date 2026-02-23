@@ -26,25 +26,13 @@ staging-settings:
     - chain-name: ethereum-testnet-sepolia
       url: https://ethereum-sepolia-rpc.publicnode.com
 # ==========================================================================
-production-settings:
+publisher-settings:
   user-workflow:
-    workflow-name: "workflow-production"
+    workflow-name: "powerindex-publisher"
   workflow-artifacts:
-    workflow-path: "./main.ts"
-    config-path: "./config.production.json"
-    secrets-path: ""
-
-workflow:
-  schedule: "*/10 * * * * *"
-  tokenUrl: "https://sts.nordpoolgroup.com/connect/token"
-  apiUrl: "https://apitest.nordpoolspot.com/api/v2/Auction/Prices/ByAreas"
-  market: "DayAhead"
-  area: "NO1"
-  currency: "EUR"
-  date: "2026-01-25"
-
-  # LOCAL ONLY (remove later)
-  NORDPOOL_BASIC_AUTH: "BASE64_CLIENTID_COLON_SECRET"
-  NORDPOOL_USERNAME: "your_username"
-  NORDPOOL_PASSWORD: "your_password"
-  NORDPOOL_SCOPE: "global"
+    workflow-path: "./publisher.ts"
+    config-path: "./config.publisher.json"
+    secrets-path: "../secrets.yaml"
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com

@@ -1,0 +1,17 @@
+{
+  "schedule": "*/15 * * * *",
+  "tokenUrl": "https://sts.nordpoolgroup.com/connect/token",
+  "apiUrl": "https://data-api.nordpoolgroup.com/api/v2/Auction/Prices/ByAreas",
+  "market": "DayAhead",
+  "currency": "EUR",
+  "areas": ["SE2"],
+  "indexName": "NORDPOOL_DAYAHEAD_AVG_V1",
+
+  "chainName": "ethereum-testnet-sepolia",
+  "consumerAddress": "0x215BffcdbAD4B09bdF2Dc63c375E6DeE81fEb907",
+  "gasLimit": "250000",
+
+  "publishHourUtc": 12,
+  "forceRun": false,
+  "dryRunOnchain": false
+}
