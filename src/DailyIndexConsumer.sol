@@ -14,6 +14,8 @@ contract DailyIndexConsumer is IReceiver {
         uint64 reportedAt
     );
 
+    event ForwarderUpdated(address indexed oldForwarder, address indexed newForwarder);
+
     struct Commitment {
         bytes32 datasetHash;
         int256 value1e6;
@@ -24,13 +26,29 @@ contract DailyIndexConsumer is IReceiver {
     // indexId => areaId => date => commitment
     mapping(bytes32 => mapping(bytes32 => mapping(uint32 => Commitment))) public commitments;
 
-    address public immutable forwarder;
+    address public owner;
+    address public forwarder;
 
     error AlreadyCommitted();
     error OnlyForwarder();
+    error NotOwner();
+    error ZeroAddress();
 
     constructor(address forwarder_) {
+        if (forwarder_ == address(0)) revert ZeroAddress();
+        owner = msg.sender;
         forwarder = forwarder_;
+    }
+
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
+
+    function setForwarder(address newForwarder) external onlyOwner {
+        if (newForwarder == address(0)) revert ZeroAddress();
+        emit ForwarderUpdated(forwarder, newForwarder);
+        forwarder = newForwarder;
     }
 
     function onReport(bytes calldata, bytes calldata report) external override {
@@ -44,12 +62,8 @@ contract DailyIndexConsumer is IReceiver {
 
         uint64 ts = uint64(block.timestamp);
 
-        commitments[indexId][areaId][yyyymmdd] = Commitment({
-            datasetHash: datasetHash,
-            value1e6: value1e6,
-            reporter: tx.origin, // optional: EOA initiator; or msg.sender
-            reportedAt: ts
-        });
+        commitments[indexId][areaId][yyyymmdd] =
+            Commitment({datasetHash: datasetHash, value1e6: value1e6, reporter: tx.origin, reportedAt: ts});
 
         emit DailyIndexCommitted(indexId, areaId, yyyymmdd, value1e6, datasetHash, tx.origin, ts);
     }
