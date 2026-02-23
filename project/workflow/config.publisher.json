@@ -4,7 +4,7 @@
   "apiUrl": "https://data-api.nordpoolgroup.com/api/v2/Auction/Prices/ByAreas",
   "market": "DayAhead",
   "currency": "EUR",
-  "areas": ["SE2"],
+  "areas": ["NO1","NO2","NO3","NO4","NO5","DK1","DK2","FI","SE1","SE2","SE3","SE4"],
   "indexName": "NORDPOOL_DAYAHEAD_AVG_V1",
 
   "chainName": "ethereum-testnet-sepolia",
