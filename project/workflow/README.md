@@ -1,90 +1,158 @@
-# PowerIndex CRE Workflow
+# PowerIndex CRE Workflows
 
-This folder contains the Chainlink Runtime Environment (CRE) workflow for computing a daily Nord Pool power index and producing a JSON payload suitable for on-chain submission.
+This folder contains the Chainlink Runtime Environment (CRE) workflows
+used in PowerIndex.
 
-## What it does
+There are two workflows:
 
-- Cron-triggered workflow
-- Fetches Nord Pool day-ahead prices (OAuth2 token flow)
-- Computes daily average (supports 92/96/100 periods for DST)
-- Supports negative prices (int256-safe)
-- Builds a canonical dataset hash over all intraday periods
-- Emits a JSON payload for local relaying
+1.  `publisher.ts` --- Production-style publisher (writes directly
+    on-chain)
+2.  `main.ts` --- Request-based workflow (used in local Anvil demo)
 
-The dataset hash commits to all (periodIndex, int256 value1e6) pairs for the day.
+------------------------------------------------------------------------
 
-## Simulate locally
+## 1. Publisher Workflow (`publisher.ts`)
+
+This workflow publishes the Nord Pool Day-ahead electricity index
+directly to `DailyIndexConsumer`.
+
+### What it does
+
+-   Cron-triggered workflow
+-   Uses OAuth2 to fetch Nord Pool Day-ahead prices
+-   Computes D+1 delivery date (today + 1 day UTC)
+-   Fetches all bidding zones in a single batched API request
+-   Supports 92 / 96 / 100 periods (DST-safe)
+-   Supports negative prices (int256-safe)
+-   Computes deterministic dataset hash
+-   Skips already committed dates
+-   Writes report on-chain via `writeReport`
+
+### Simulate
 
 From this folder:
 
-`./run_workflow_and_capture.sh`
+    cre workflow simulate workflow   -T publisher-settings   --trigger-index 0   --non-interactive   --env ./.env
 
-This will:
+### Broadcast to Sepolia
 
-- Run cre workflow simulate
-- Extract the POWERINDEX_JSON log line
-- Write out/latest.json
+    cre workflow simulate workflow   -T publisher-settings   --trigger-index 0   --non-interactive   --env ./.env   --broadcast
 
-## Relay On-Chain 
+------------------------------------------------------------------------
 
-From the repo root:
+## 2. Request Workflow (`main.ts`) --- Local Demo
 
-- `make relay`
-- `make read`
+This workflow is used together with the local Anvil demo and
+`RequestRegistry`.
 
-Ensure that `PAYLOAD_PATH=project/out/latest.json`
+Flow:
 
-The relay script parses:
+1.  Frontend creates a request on-chain
+2.  Workflow reads request parameters
+3.  Computes index (demo mode or real API)
+4.  Emits JSON payload
+5.  Local script relays result via `LocalCREForwarder`
 
-- indexName
-- area
-- dateNum
-- value1e6
-- datasetHashHex
+### Run via Makefile (repo root)
 
-and forwards the encoded report via LocalCREForwarder.
+Demo mode:
 
+    make simulate-request REQUEST_ID=1
+
+Real Nord Pool API:
+
+    make request REQUEST_ID=1
+
+This writes:
+
+    project/out/latest.json
+
+------------------------------------------------------------------------
+
+## Relay On-Chain (Local Anvil)
+
+From repo root:
+
+    make fulfill REQUEST_ID=1
+    make read
+
+The fulfill script:
+
+-   Calls `RequestRegistry.markFulfilled(...)`
+-   Encodes `(indexId, yyyymmdd, areaId, value1e6, datasetHash)`
+-   Forwards report via `LocalCREForwarder`
+-   Calls `DailyIndexConsumer.onReport(...)`
+
+------------------------------------------------------------------------
+
+## Dataset Hash Construction
+
+For each period:
+
+    u32(periodIndex) ++ int256(value1e6)
+
+Then:
+
+    datasetHash = keccak256(concatenatedBytes)
+
+This ensures:
+
+-   Deterministic reproducibility
+-   Verifiable linkage between dataset and committed value
+-   Full support for negative prices
+
+------------------------------------------------------------------------
 
 ## Configuration
 
-Workflow config lives under:
+Workflow configuration lives under:
 
-- `workflow/workflow.yaml` (target settings)
-- plus any `config.*` files referenced by the target
+-   `workflow.yaml` --- Target settings
+-   `config.publisher.json`
+-   `config.staging.json`
 
-Common fields include:
-- `schedule`
-- `tokenUrl`
-- `apiUrl`
-- `market`
-- `area`
-- `currency`
-- `date` (for testing; later computed dynamically)
-- `indexName`
-- `valueDecimals`
-- `demoMode`
+Common fields:
+
+-   `schedule`
+-   `tokenUrl`
+-   `apiUrl`
+-   `market`
+-   `areas`
+-   `currency`
+-   `indexName`
+-   `chainName`
+-   `consumerAddress`
+-   `gasLimit`
+-   `publishHourUtc`
+-   `dryRunOnchain`
+-   `forceRun`
+
+------------------------------------------------------------------------
 
 ## Secrets
 
-This project expects secrets (names only, values not committed):
-- `NORDPOOL_BASIC_AUTH`
-- `NORDPOOL_USERNAME`
-- `NORDPOOL_PASSWORD`
-- `NORDPOOL_SCOPE`
+Secrets are referenced by name (values not committed):
 
-Use `project/.env.example` as a template.
+-   `NORDPOOL_BASIC_AUTH`
+-   `NORDPOOL_USERNAME`
+-   `NORDPOOL_PASSWORD`
+-   `NORDPOOL_SCOPE`
 
-## Output payload schema (simulation)
+Use `project/.env.example` and `secrets.example.yaml` as templates.
 
-A typical `out/latest.json` contains:
+------------------------------------------------------------------------
 
-- `indexName` (string)
-- `area` (string)
-- `date` (string `YYYY-MM-DD`)
-- `dateNum` (number `yyyymmdd`)
-- `currency` (string)
-- `value1e6` (string or number)
-- `datasetHashHex` (string)
-- `periodCount` (number)
+## Output Payload (Request Workflow)
 
-This workflow produces a deterministic dataset hash suitable for verifiable on-chain settlement via DailyIndexConsumer.
+`project/out/latest.json` contains:
+
+-   `indexName`
+-   `area`
+-   `date`
+-   `dateNum`
+-   `currency`
+-   `value1e6`
+-   `datasetHashHex`
+-   `periodCount`
+
+The publisher workflow does not emit JSON; it writes directly on-chain.
