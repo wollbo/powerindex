@@ -61,6 +61,8 @@ type TokenResponse = {
 };
 
 type NordPoolAreaPrices = {
+  market?: string;
+  deliveryArea: string; // <- IMPORTANT (e.g. "SE2")
   status: "Missing" | "Preliminary" | "Final" | "Cancelled";
   averagePrice: number;
   prices: Array<{
@@ -71,6 +73,7 @@ type NordPoolAreaPrices = {
 };
 
 type NordPoolPricesByAreasResponse = NordPoolAreaPrices[];
+
 
 function formUrlEncode(params: Record<string, string>) {
   return Object.entries(params)
@@ -252,6 +255,69 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
   let skippedNotFinal = 0;
   let errors = 0;
 
+    // ---------------------------
+  // HTTP: 1 token + 1 batched prices call (ALL areas)
+  // ---------------------------
+
+  const areasParam = runtime.config.areas.join(",");
+
+  // 1) OAuth2 Token (once)
+  const bodyStr = formUrlEncode({
+    grant_type: "password",
+    scope,
+    username,
+    password,
+  });
+
+  const tokenResp = http
+    .sendRequest(nodeRuntime, {
+      url: runtime.config.tokenUrl,
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuthB64}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: base64EncodeUtf8(bodyStr),
+    })
+    .result();
+
+  if (tokenResp.statusCode !== 200) {
+    throw new Error(`Token request failed: ${tokenResp.statusCode}`);
+  }
+
+  const tokenJson = JSON.parse(decodeBody(tokenResp.body)) as TokenResponse;
+  if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
+
+  // 2) Prices (once) for ALL areas
+  const pricesUrl =
+    `${runtime.config.apiUrl}?market=${encodeURIComponent(runtime.config.market)}` +
+    `&areas=${encodeURIComponent(areasParam)}` +
+    `&currency=${encodeURIComponent(runtime.config.currency)}` +
+    `&date=${encodeURIComponent(date)}`;
+
+  const pricesResp = http
+    .sendRequest(nodeRuntime, {
+      url: pricesUrl,
+      method: "GET",
+      headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+    })
+    .result();
+
+  if (pricesResp.statusCode !== 200) {
+    throw new Error(`Prices request failed: ${pricesResp.statusCode}`);
+  }
+
+  const allAreasData = JSON.parse(decodeBody(pricesResp.body)) as NordPoolPricesByAreasResponse;
+  if (!Array.isArray(allAreasData) || allAreasData.length === 0) {
+    throw new Error("Nord Pool response empty.");
+  }
+
+  // Map deliveryArea -> payload
+  const byDeliveryArea = new Map<string, NordPoolAreaPrices>();
+  for (const item of allAreasData) {
+    if (item?.deliveryArea) byDeliveryArea.set(item.deliveryArea, item);
+  }
+
   for (const area of runtime.config.areas) {
     try {
       const aId = areaId(area);
@@ -293,55 +359,13 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
       } else {
         runtime.log(`DRY_RUN mode: skipping onchain commitments check for area=${area}`);
       }
-      // Oauth2 Token
-      const bodyStr = formUrlEncode({
-        grant_type: "password",
-        scope,
-        username,
-        password,
-      });
-
-      const tokenResp = http
-        .sendRequest(nodeRuntime, {
-          url: runtime.config.tokenUrl,
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${basicAuthB64}`,
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: base64EncodeUtf8(bodyStr),
-        })
-        .result();
-
-      if (tokenResp.statusCode !== 200) {
-        throw new Error(`Token request failed: ${tokenResp.statusCode}`);
+      
+      const item = byDeliveryArea.get(area);
+      if (!item) {
+        errors++;
+        runtime.log(`ERROR area=${area}: missing from Nord Pool response (deliveryArea not found)`);
+        continue;
       }
-
-      const tokenJson = JSON.parse(decodeBody(tokenResp.body)) as TokenResponse;
-      if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
-
-      // API read
-      const url =
-        `${runtime.config.apiUrl}?market=${encodeURIComponent(runtime.config.market)}` +
-        `&areas=${encodeURIComponent(area)}` +
-        `&currency=${encodeURIComponent(runtime.config.currency)}` +
-        `&date=${encodeURIComponent(date)}`;
-
-      const pricesResp = http
-        .sendRequest(nodeRuntime, {
-          url,
-          method: "GET",
-          headers: { Authorization: `Bearer ${tokenJson.access_token}` },
-        })
-        .result();
-
-      if (pricesResp.statusCode !== 200) {
-        throw new Error(`Prices request failed: ${pricesResp.statusCode}`);
-      }
-
-      const data = JSON.parse(decodeBody(pricesResp.body)) as NordPoolPricesByAreasResponse;
-      const item = data?.[0];
-      if (!item) throw new Error("Nord Pool response empty.");
 
       if (item.status !== "Final") {
         skippedNotFinal++;
