@@ -30,7 +30,8 @@ type Config = {
   schedule: string;
 
   tokenUrl: string;
-  apiUrl: string;
+  priceUrl: string;
+  volumeUrl: string;
   market: "DayAhead";
   currency: "EUR" | "NOK" | "SEK" | "DKK" | "GBP" | "PLN" | "RON";
 
@@ -64,7 +65,7 @@ type NordPoolAreaPrices = {
   market?: string;
   deliveryArea: string; // <- IMPORTANT (e.g. "SE2")
   status: "Missing" | "Preliminary" | "Final" | "Cancelled";
-  averagePrice: number;
+
   prices: Array<{
     deliveryStart: string;
     deliveryEnd: string;
@@ -72,7 +73,20 @@ type NordPoolAreaPrices = {
   }>;
 };
 
+type NordPoolAreaVolumes = {
+  market?: string;
+  deliveryArea: string; // e.g. "SE2"
+  status: "Missing" | "Preliminary" | "Final" | "Cancelled";
+
+  volumes: Array<{
+    deliveryStart: string;
+    deliveryEnd: string;
+    buy: number | null; // MW
+  }>;
+};
+
 type NordPoolPricesByAreasResponse = NordPoolAreaPrices[];
+type NordPoolVolumesByAreasResponse = NordPoolAreaVolumes[];
 
 
 function formUrlEncode(params: Record<string, string>) {
@@ -147,38 +161,92 @@ function keccakHex(bytes: Uint8Array): `0x${string}` {
   return (`0x${nobleBytesToHex(keccak_256(bytes))}`) as `0x${string}`;
 }
 
-function computeDailyFromPrices(prices: NordPoolAreaPrices["prices"]) {
-  const vals = prices
+function normalizeVolumesBuy(
+  volumes: NordPoolAreaVolumes["volumes"]
+) {
+  return volumes
+    .filter((v) => typeof v.buy === "number")
+    .map((v) => ({
+      start: v.deliveryStart,
+      buy: v.buy as number,
+    }))
+    .sort((a, b) => a.start.localeCompare(b.start));
+}
+
+function joinPricesAndBuyVolumes(
+  prices: NordPoolAreaPrices["prices"],
+  volumes: NordPoolAreaVolumes["volumes"]
+) {
+  const sortedPrices = prices
     .filter((p) => typeof p.price === "number")
     .map((p) => ({ start: p.deliveryStart, price: p.price as number }))
     .sort((a, b) => a.start.localeCompare(b.start));
 
-  const n = vals.length;
-  if (n !== 92 && n !== 96 && n !== 100) {
-    throw new Error(`Unexpected period count ${n} (expected 92/96/100).`);
-  }
+  const sortedVolumes = normalizeVolumesBuy(volumes);
 
-  const points = vals.map((v, i) => ({
-    periodIndex: i,
-    value1e6: BigInt(Math.round(v.price * 1e6)),
-  }));
+  const volByStart = new Map(sortedVolumes.map(v => [v.start, v.buy]));
 
-  let sum = 0n;
-  for (const p of points) sum += p.value1e6;
-  const avg1e6 = sum / BigInt(points.length);
+  return sortedPrices
+    .map((p, i) => {
+      const buy = volByStart.get(p.start);
+      if (typeof buy !== "number" || buy === 0) return null;
 
-  const packedParts: Uint8Array[] = [];
-  for (const p of points) {
-    packedParts.push(u32be(p.periodIndex));
-    packedParts.push(i256be(p.value1e6));
-  }
-  const datasetHash = keccakHex(concatBytes(packedParts));
-
-  return { avg1e6, periodCount: n, datasetHash };
+      return {
+        periodIndex: i,
+        price1e6: BigInt(Math.round(p.price * 1e6)),
+        vol1e6: BigInt(Math.round(buy * 1e6)),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
 function base64EncodeUtf8(s: string): string {
-  return Buffer.from(s, "utf8").toString("base64");
+  const bytes = new TextEncoder().encode(s);
+  const hex = bytesToHex(bytes);     // "0x..."
+  return hexToBase64(hex);           // base64 string
+}
+
+function computeDailyVWAP(args: {
+  prices: NordPoolAreaPrices["prices"];
+  volumes: NordPoolAreaVolumes["volumes"];
+}) {
+  const points = joinPricesAndBuyVolumes(args.prices, args.volumes);
+
+  if (points.length === 0) {
+    throw new Error("No valid (price, buyVolume) points after filtering (missing/0 volumes).");
+  }
+
+  // VWAP: sum(price * vol) / sum(vol)
+  // price1e6 * vol1e6 => 1e12 scale
+  // divide by sum(vol1e6) => back to 1e6
+  let denom = 0n;
+  let numer = 0n;
+
+  for (const p of points) {
+    denom += p.vol1e6;
+    numer += p.price1e6 * p.vol1e6;
+  }
+
+  if (denom === 0n) {
+    throw new Error("VWAP denominator is 0 (sum of volumes == 0); refusing to publish.");
+  }
+
+  const vwap1e6 = numer / denom;
+
+  // Dataset hash over (periodIndex, price1e6, vol1e6) for each included point
+  const packedParts: Uint8Array[] = [];
+  for (const p of points) {
+    packedParts.push(u32be(p.periodIndex));
+    packedParts.push(i256be(p.price1e6));
+    packedParts.push(i256be(p.vol1e6));
+  }
+  const datasetHash = keccakHex(concatBytes(packedParts));
+
+  return {
+    value1e6: vwap1e6,
+    periodCount: points.length, // "used points"
+    datasetHash,
+  };
 }
 
 const DailyIndexConsumerAbi = [
@@ -255,7 +323,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
   let skippedNotFinal = 0;
   let errors = 0;
 
-    // ---------------------------
+  // ---------------------------
   // HTTP: 1 token + 1 batched prices call (ALL areas)
   // ---------------------------
 
@@ -290,7 +358,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
 
   // 2) Prices (once) for ALL areas
   const pricesUrl =
-    `${runtime.config.apiUrl}?market=${encodeURIComponent(runtime.config.market)}` +
+    `${runtime.config.priceUrl}?market=${encodeURIComponent(runtime.config.market)}` +
     `&areas=${encodeURIComponent(areasParam)}` +
     `&currency=${encodeURIComponent(runtime.config.currency)}` +
     `&date=${encodeURIComponent(date)}`;
@@ -307,15 +375,44 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
     throw new Error(`Prices request failed: ${pricesResp.statusCode}`);
   }
 
-  const allAreasData = JSON.parse(decodeBody(pricesResp.body)) as NordPoolPricesByAreasResponse;
-  if (!Array.isArray(allAreasData) || allAreasData.length === 0) {
+  const allAreasPriceData = JSON.parse(decodeBody(pricesResp.body)) as NordPoolPricesByAreasResponse;
+  if (!Array.isArray(allAreasPriceData) || allAreasPriceData.length === 0) {
     throw new Error("Nord Pool response empty.");
   }
 
   // Map deliveryArea -> payload
-  const byDeliveryArea = new Map<string, NordPoolAreaPrices>();
-  for (const item of allAreasData) {
-    if (item?.deliveryArea) byDeliveryArea.set(item.deliveryArea, item);
+  const byDeliveryAreaPrices = new Map<string, NordPoolAreaPrices>();
+  for (const item of allAreasPriceData) {
+    if (item?.deliveryArea) byDeliveryAreaPrices.set(item.deliveryArea, item);
+  }
+
+  // 3) Volumes (once) for ALL areas (same token)
+  const volumesUrl =
+    `${runtime.config.volumeUrl}?market=${encodeURIComponent(runtime.config.market)}` +
+    `&areas=${encodeURIComponent(areasParam)}` +
+    `&date=${encodeURIComponent(date)}`;
+
+  const volumesResp = http
+    .sendRequest(nodeRuntime, {
+      url: volumesUrl,
+      method: "GET",
+      headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+    })
+    .result();
+
+  if (volumesResp.statusCode !== 200) {
+    throw new Error(`Volumes request failed: ${volumesResp.statusCode}`);
+  }
+
+  const allAreasVolumesData = JSON.parse(decodeBody(volumesResp.body)) as NordPoolVolumesByAreasResponse;
+  if (!Array.isArray(allAreasVolumesData) || allAreasVolumesData.length === 0) {
+    throw new Error("Nord Pool volumes response empty.");
+  }
+
+  // Map deliveryArea -> volumes payload
+  const byDeliveryAreaVolumes = new Map<string, NordPoolAreaVolumes>();
+  for (const item of allAreasVolumesData) {
+    if (item?.deliveryArea) byDeliveryAreaVolumes.set(item.deliveryArea, item);
   }
 
   for (const area of runtime.config.areas) {
@@ -359,25 +456,38 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
       } else {
         runtime.log(`DRY_RUN mode: skipping onchain commitments check for area=${area}`);
       }
-      
-      const item = byDeliveryArea.get(area);
-      if (!item) {
+      const priceItem = byDeliveryAreaPrices.get(area);
+      if (!priceItem) {
         errors++;
-        runtime.log(`ERROR area=${area}: missing from Nord Pool response (deliveryArea not found)`);
+        runtime.log(`ERROR area=${area}: missing from Nord Pool PRICES response (deliveryArea not found)`);
         continue;
       }
 
-      if (item.status !== "Final") {
+      const volumeItem = byDeliveryAreaVolumes.get(area);
+      if (!volumeItem) {
+        errors++;
+        runtime.log(`ERROR area=${area}: missing from Nord Pool VOLUMES response (deliveryArea not found)`);
+        continue;
+      }
+
+      // Require both to be Final (and optionally consistent)
+      if (priceItem.status !== "Final" || volumeItem.status !== "Final") {
         skippedNotFinal++;
-        runtime.log(`Area ${area}: status=${item.status}, skipping`);
+        runtime.log(
+          `Area ${area}: prices.status=${priceItem.status} volumes.status=${volumeItem.status}, skipping`
+        );
         continue;
       }
 
-      const { avg1e6, periodCount, datasetHash } = computeDailyFromPrices(item.prices);
+      // Compute VWAP instead of AVG
+      const { value1e6, periodCount, datasetHash } = computeDailyVWAP({
+        prices: priceItem.prices,
+        volumes: volumeItem.volumes,
+      });
 
       if (runtime.config.dryRunOnchain) {
         runtime.log(
-            `DRY_RUN area=${area} date=${date} value1e6=${avg1e6.toString()} periodCount=${periodCount} datasetHash=${datasetHash}`
+            `DRY_RUN area=${area} date=${date} value1e6=${value1e6.toString()} periodCount=${periodCount} datasetHash=${datasetHash}`
         );
         committed++;
         continue;
@@ -386,7 +496,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
       // Encode consumer report ABI (matches onReport decode)
       const reportPayload = encodeAbiParameters(
         parseAbiParameters("bytes32 indexId, uint32 yyyymmdd, bytes32 areaId, int256 value1e6, bytes32 datasetHash"),
-        [idxId, dateNum, aId, avg1e6, datasetHash]
+        [idxId, dateNum, aId, value1e6, datasetHash]
       );
 
       // signed report
@@ -412,7 +522,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
       committed++;
 
       runtime.log(
-        `PUBLISHED area=${area} date=${date} value1e6=${avg1e6.toString()} periodCount=${periodCount} datasetHash=${datasetHash} tx=${txHash}`
+        `PUBLISHED area=${area} date=${date} value1e6=${value1e6.toString()} periodCount=${periodCount} datasetHash=${datasetHash} tx=${txHash}`
       );
       runtime.log(`Etherscan: https://sepolia.etherscan.io/tx/${txHash}`);
     } catch (e) {
