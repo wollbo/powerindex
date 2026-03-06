@@ -13,6 +13,6 @@
   "gasLimit": "250000",
 
   "publishHourUtc": 12,
-  "forceRun": true,
+  "forceRun": false,
   "dryRunOnchain": false
 }

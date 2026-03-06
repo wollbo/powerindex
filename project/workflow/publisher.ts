@@ -47,6 +47,7 @@ type Config = {
   publishHourUtc: number;
   forceRun?: boolean;
   dryRunOnchain?: boolean;
+  deliveryDateOverride?: string // YYYY-MM-DD
 
   // secrets (resolved from config OR env)
   NORDPOOL_BASIC_AUTH?: string;
@@ -307,8 +308,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
 
   const evmClient = new EVMClient(network.chainSelector.selector);
 
-  const date = addDaysUtc(todayUtcYyyyMmDd(), 1); // DayAhead delivery date
-  const dateNum = yyyymmdd(date);
+  const date = runtime.config.deliveryDateOverride ?? addDaysUtc(todayUtcYyyyMmDd(), 1);  const dateNum = yyyymmdd(date);
   const idxId = indexId(runtime.config.indexName);
 
   const basicAuthB64 = getSecret("NORDPOOL_BASIC_AUTH");
@@ -329,7 +329,6 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
 
   const areasParam = runtime.config.areas.join(",");
 
-  // 1) OAuth2 Token (once)
   const bodyStr = formUrlEncode({
     grant_type: "password",
     scope,
@@ -356,7 +355,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
   const tokenJson = JSON.parse(decodeBody(tokenResp.body)) as TokenResponse;
   if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
 
-  // 2) Prices (once) for ALL areas
+  // 2) Prices for ALL areas
   const pricesUrl =
     `${runtime.config.priceUrl}?market=${encodeURIComponent(runtime.config.market)}` +
     `&areas=${encodeURIComponent(areasParam)}` +
@@ -386,7 +385,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
     if (item?.deliveryArea) byDeliveryAreaPrices.set(item.deliveryArea, item);
   }
 
-  // 3) Volumes (once) for ALL areas (same token)
+  // 3) Volumes for ALL areas (same token)
   const volumesUrl =
     `${runtime.config.volumeUrl}?market=${encodeURIComponent(runtime.config.market)}` +
     `&areas=${encodeURIComponent(areasParam)}` +
@@ -470,7 +469,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
         continue;
       }
 
-      // Require both to be Final (and optionally consistent)
+      // Require both to be Final
       if (priceItem.status !== "Final" || volumeItem.status !== "Final") {
         skippedNotFinal++;
         runtime.log(
@@ -479,7 +478,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
         continue;
       }
 
-      // Compute VWAP instead of AVG
+      // Compute VWAP
       const { value1e6, periodCount, datasetHash } = computeDailyVWAP({
         prices: priceItem.prices,
         volumes: volumeItem.volumes,
