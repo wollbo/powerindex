@@ -1,12 +1,12 @@
 # PowerIndex CRE Workflows
 
-This folder contains the Chainlink Runtime Environment (CRE) workflows
-used in PowerIndex.
+This folder contains the **Chainlink Runtime Environment (CRE)** workflows used in PowerIndex.
+
+These workflows connect the Nord Pool electricity market API with an on-chain consumer contract by computing a deterministic price index and publishing signed reports on-chain.
 
 There are two workflows:
 
-1.  `publisher.ts` --- Production-style publisher (writes directly
-    on-chain)
+1.  `publisher.ts` --- Production-style publisher (writes directly on-chain)
 2.  `main.ts` --- Request-based workflow (used in local Anvil demo)
 
 ------------------------------------------------------------------------

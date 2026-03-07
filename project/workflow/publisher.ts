@@ -64,7 +64,7 @@ type TokenResponse = {
 
 type NordPoolAreaPrices = {
   market?: string;
-  deliveryArea: string; // <- IMPORTANT (e.g. "SE2")
+  deliveryArea: string; // (e.g. "SE1")
   status: "Missing" | "Preliminary" | "Final" | "Cancelled";
 
   prices: Array<{
@@ -76,7 +76,7 @@ type NordPoolAreaPrices = {
 
 type NordPoolAreaVolumes = {
   market?: string;
-  deliveryArea: string; // e.g. "SE2"
+  deliveryArea: string; // e.g. "SE1"
   status: "Missing" | "Preliminary" | "Final" | "Cancelled";
 
   volumes: Array<{
