@@ -38,26 +38,6 @@ The workflow:
 -   CRE CLI
 -   Node/Bun (for workflow runtime)
 
-## Quickstart (Local / Anvil)
-
-Terminal A (start Anvil):
-
--   `make anvil`
-
-Terminal B (deploy contracts):
-
--   `make build`
--   `make test`
--   `make deploy`
--   `make allow-sender`
-
-This:
-
--   Deploys DailyIndexConsumer
--   Deploys LocalCREForwarder
--   Deploys RequestRegistry
--   Deploys NorthpoleOptionFactory
--   Authorizes your local EOA as allowed forwarder sender
 
 ## Sepolia Publisher (Real Data)
 
@@ -82,6 +62,26 @@ Features:
 
     cre workflow simulate workflow   -T publisher-settings   --trigger-index 0   --non-interactive   --env ./.env   --broadcast
 
+## Quickstart (Local / Anvil)
+
+Terminal A (start Anvil):
+
+-   `make anvil`
+
+Terminal B (deploy contracts):
+
+-   `make build`
+-   `make test`
+-   `make deploy`
+-   `make allow-sender`
+
+This:
+
+-   Deploys DailyIndexConsumer
+-   Deploys LocalCREForwarder
+-   Deploys RequestRegistry
+-   Deploys NorthpoleOptionFactory
+-   Authorizes your local EOA as allowed forwarder sender
 
 ## Local Request → Fulfillment Flow
 
