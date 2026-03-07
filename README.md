@@ -25,24 +25,6 @@ The workflow:
 - Computes `datasetHash = keccak256(packedPeriods)`
 - Submits `(indexId, yyyymmdd, areaId, value1e6, datasetHash)` on-chain
 
-## System Overview
-
-Nord Pool API
-      ↓
-CRE Workflow (TypeScript)
-      ↓
-Signed Report
-      ↓
-DailyIndexConsumer (Solidity)
-      ↓
-Prediction Market Contracts
-      ↓
-Frontend (React + wagmi)
-
-## Screenshot
-
-![PowerIndex UI](docs/powerindex-ui.png)
-
 ## Repo layout
 
 -   `src/`, `script/`, `test/` --- Solidity contracts + Foundry
