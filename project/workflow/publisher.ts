@@ -385,7 +385,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
     if (item?.deliveryArea) byDeliveryAreaPrices.set(item.deliveryArea, item);
   }
 
-  // 3) Volumes for ALL areas (same token)
+  // Volumes for ALL areas (same token)
   const volumesUrl =
     `${runtime.config.volumeUrl}?market=${encodeURIComponent(runtime.config.market)}` +
     `&areas=${encodeURIComponent(areasParam)}` +
