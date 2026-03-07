@@ -355,7 +355,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
   const tokenJson = JSON.parse(decodeBody(tokenResp.body)) as TokenResponse;
   if (!tokenJson.access_token) throw new Error("Token response missing access_token.");
 
-  // 2) Prices for ALL areas
+  // Prices for ALL areas
   const pricesUrl =
     `${runtime.config.priceUrl}?market=${encodeURIComponent(runtime.config.market)}` +
     `&areas=${encodeURIComponent(areasParam)}` +
