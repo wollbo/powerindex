@@ -153,7 +153,7 @@ Do not commit secrets. `.env` and `secrets.yaml` are ignored by git.
 
 ## Project Origin
 
-This project builds on an earlier prototype ("Northpole") created during a previous Chainlink hackathon.
+This project builds on an earlier prototype ("Northpole") created during the Chainlink spring 2022 hackathon.
 
 The original version demonstrated the idea of settling financial contracts against a Nordic electricity price index, but relied on a custom external adapter, unofficial APIs, and bridge infrastructure hosted on AWS.
 
